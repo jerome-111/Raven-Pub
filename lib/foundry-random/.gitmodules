@@ -1,0 +1,18 @@
+[submodule "lib/forge-std"]
+  branch = "master"
+  path = "lib/forge-std"
+  url = "https://github.com/foundry-rs/forge-std"
+[submodule "lib/prb-test"]
+  branch = "0.3.1"
+  path = "lib/prb-test"
+  url = "https://github.com/paulrberg/prb-test"
+[submodule "lib/CramBit"]
+	path = lib/CramBit
+	url = https://github.com/joejordan/CramBit
+[submodule "lib\\CramBit"]
+	branch = v0.1.1
+[submodule "lib/solidity-bytes-utils"]
+	path = lib/solidity-bytes-utils
+	url = https://github.com/GNSPS/solidity-bytes-utils
+[submodule "lib\\solidity-bytes-utils"]
+	branch = v0.8.0
