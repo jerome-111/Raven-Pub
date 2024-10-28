@@ -53,13 +53,19 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
     mapping(uint256 round => uint256 ethPrice) public ethPrices;
 
     modifier onlyAdmin() {
-        require(msg.sender == admin);
+        require(msg.sender == admin, "caller is not admin");
         _;
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
     function initialize(address owner_, string memory name_, string memory symbol_, ConstructParams memory cp) public initializer  {
+        require(cp.Admin != address(0), "invalid Admin address(0)");
+        require(cp.Forwarder != address(0), "invalid Forwarder address(0)");
+        require(cp.Usdt != address(0), "invalid Usdt address(0)");
+        require(cp.DataFeedAddress != address(0), "invalid DataFeedAddress address(0)");
+        require(cp.PubVaultAddress != address(0), "invalid PubVaultAddress address(0)");
+
         __Ownable_init(owner_);
         __ERC20_init(name_, symbol_);
         __UUPSUpgradeable_init();
@@ -159,7 +165,7 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
             LevgPosition memory oldPos = levgPositions[pId];
             uint256 newValue = oldPos.Value + app.ValueToAdd;
             uint256 newMargin = oldPos.Margin + app.MarginToAdd;
-            uint256 newLeverage = oldPos.Leverage == 0 ? app.Leverage : (oldPos.Value + app.ValueToAdd) / (oldPos.Margin + app.MarginToAdd);
+            uint256 newLeverage = oldPos.Leverage == 0 ? app.Leverage : newValue / newMargin;
             uint256 newOpenTime = oldPos.OpenTime == 0 ? block.timestamp : oldPos.OpenTime;
             if (app.IsLqdt) { require(_liquidationTime(newOpenTime, newValue, newMargin) <= lastStrikeTime + expiration, "Lqdt time exceed expiration"); }
             levgPositions[pId] = LevgPosition({
@@ -226,9 +232,9 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
         bytes32 oId = _optionId(r, s, o);
         bytes32 pId = _positionId(oId, u);
         LevgPosition storage lPos = levgPositions[pId];
-        if (lPos.Value > lPos.Margin) {
-            pubVault.releaseLocked(lPos.Value - lPos.Margin);
-        }
+        // if (lPos.Value > lPos.Margin) {
+        //     pubVault.releaseLocked(lPos.Value - lPos.Margin);
+        // }
         (OType win, OType los) = _win_los(r, s, ethPrices[r]);
         if(o == los) {
             lPos.Share = 0;
@@ -336,13 +342,13 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
     }
 
     function _strike(uint256 ethPriceNow) internal returns(uint256 adminHold) {
-        if (globalRound == 0) return adminHold;
+        if (globalRound == 0) return 0;
+        if (pubVault.totalLocked() > 0) {
+            pubVault.withdrawLocked();
+        }
         for(uint8 i = 0; i < vSlots; i++) {
             (, OType los) = _win_los(globalRound, i, ethPriceNow);
             bytes32 losId = _optionId(globalRound, i, los);
-            if (pubVault.totalLocked() > 0) {
-                pubVault.withdrawLocked();
-            }
             adminHold += allValue[losId] * winPerc * adminPerc / (basePerc * basePerc);
         }
     }
@@ -355,6 +361,7 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
     }
 
     function updateForwarder(address newForwarder) external onlyAdmin {
+        require(newForwarder != address(0), "invalid newForwarder address(0)");
         forwarder = newForwarder;
     }
 
@@ -402,6 +409,7 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
             /*uint timeStamp*/,
             /*uint80 answeredInRound*/
         ) = dataFeed.latestRoundData();
+        require(answer >= 0, "answer is negative");
         return (uint256(answer), dataFeed.decimals());
 
         // /// Test

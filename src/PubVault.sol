@@ -41,6 +41,10 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
         uint256 maxDeposit_,
         uint256 safeLine_
     ) public initializer {
+        require(usdt_ != address(0), "invalid usdt address(0)");
+        require(minDeposit_ > 0, "invalid minDeposit: 0");
+        require(maxDeposit_ > 0, "invalid maxDeposit: 0");
+        require(minDeposit_ < maxDeposit_, "minDeposit < maxDeposit");
         __Ownable_init(owner_);
         __ERC20_init("Raven Pool Share", "RPS");
         __UUPSUpgradeable_init();
@@ -53,6 +57,7 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
     }
 
     function post_init(address raven_) external onlyOwner {
+        require(raven_ != address(0), "invalid raven address(0)");
         raven = raven_;
     }
 
@@ -70,7 +75,9 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
     }
 
     function withdrawLocked() external onlyRaven {
-        TransferHelper.safeTransfer(usdt, raven, totalLockedAsset);
+        uint256 amountWithdraw = totalLockedAsset;
+        totalLockedAsset = 0;
+        TransferHelper.safeTransfer(usdt, raven, amountWithdraw);
     }
 
     /// user func
@@ -80,7 +87,7 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
         totalDeposits += assets;
         userDeposits[msg.sender] += assets;
         TransferHelper.safeTransferFrom(usdt, msg.sender, address(this), assets);
-        _mint(msg.sender, assets);
+        _mint(msg.sender, shares);
     }
 
     function withdraw(uint256 assets) external returns (uint256 shares) {
@@ -95,8 +102,8 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
 
     function redeem(uint256 shares) external returns (uint256 assets) {
         require(shares <= _maxRedeem(msg.sender), "exceed max redeems");
-        require(_safeCheck(assets, OP.Withdraw), "safe check not pass");
         assets = _previewRedeem(shares);
+        require(_safeCheck(assets, OP.Withdraw), "safe check not pass");
         totalWithdraws += assets;
         userWithdraws[msg.sender] += assets;
         _burn(msg.sender, shares);
@@ -109,10 +116,12 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
     }
 
     function updateMaxDeposit(uint256 newMaxDeposit) external onlyOwner {
+        require(newMaxDeposit > 0 && newMaxDeposit > minDeposit, "invalid newMaxDeposit");
         maxDeposit = newMaxDeposit;
     }
 
     function updateMinDeposit(uint256 newMinDeposit) external onlyOwner {
+        require(newMinDeposit > 0 && newMinDeposit < maxDeposit, "invalid newMaxDeposit");
         minDeposit = newMinDeposit;
     }
 
