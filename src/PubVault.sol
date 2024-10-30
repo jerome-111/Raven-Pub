@@ -31,6 +31,10 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
         _;
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
     function initialize(

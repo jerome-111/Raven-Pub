@@ -57,6 +57,10 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
         _;
     }
 
+    constructor() {
+        _disableInitializers();
+    }
+
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
     function initialize(address owner_, string memory name_, string memory symbol_, ConstructParams memory cp) public initializer  {
