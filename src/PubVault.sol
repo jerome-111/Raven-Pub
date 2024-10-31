@@ -59,7 +59,7 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
         basePerc = 100;
         safeLine = safeLine_;
     }
-
+    
     function post_init(address raven_) external onlyOwner {
         require(raven_ != address(0), "invalid raven address(0)");
         raven = raven_;
@@ -78,10 +78,11 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
         totalLockedAsset = totalLockedAsset >= release ? totalLockedAsset - release : 0;
     }
 
-    function withdrawLocked() external onlyRaven {
+    function withdrawLocked() external onlyRaven returns(uint256) {
         uint256 amountWithdraw = totalLockedAsset;
         totalLockedAsset = 0;
         TransferHelper.safeTransfer(usdt, raven, amountWithdraw);
+        return amountWithdraw;
     }
 
     /// user func
@@ -92,6 +93,7 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
         userDeposits[msg.sender] += assets;
         TransferHelper.safeTransferFrom(usdt, msg.sender, address(this), assets);
         _mint(msg.sender, shares);
+        emit VaultChange(msg.sender, assets, shares, block.timestamp, true);
     }
 
     function withdraw(uint256 assets) external returns (uint256 shares) {
@@ -102,6 +104,7 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
         userWithdraws[msg.sender] += assets;
         _burn(msg.sender, shares);
         TransferHelper.safeTransfer(usdt, msg.sender, assets);
+        emit VaultChange(msg.sender, assets, shares, block.timestamp, false);
     }
 
     function redeem(uint256 shares) external returns (uint256 assets) {
@@ -112,6 +115,7 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
         userWithdraws[msg.sender] += assets;
         _burn(msg.sender, shares);
         TransferHelper.safeTransfer(usdt, msg.sender, assets);
+        emit VaultChange(msg.sender, assets, shares, block.timestamp, false);
     }
 
     /// owner func
@@ -169,7 +173,6 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
     function convertToAssets(uint256 shares) external view returns (uint256) {
         return _convertToAssets(shares, Math.Rounding.Floor);
     }
-
     /// internal func
     function _totalAssets() internal view returns (uint256) {
         return IERC20(usdt).balanceOf(address(this));

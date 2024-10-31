@@ -8,6 +8,7 @@ import {AggregatorV3Interface} from "foundry-chainlink-toolkit/src/interfaces/fe
 import {TransferHelper} from "./lib/TransferHelper.sol";
 import {IRaven} from "./interface/IRaven.sol";
 import {IPubVault} from "./interface/IPubVault.sol";
+import {IOracle} from "./oracle/Oracle.sol";
 
 contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven {
     address public admin;
@@ -40,9 +41,11 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
 
     uint8 public usdtDecimals;
     uint8 public vSlots;
+    bool public isOpenPosEnabled;
     bool public isLevgEnabled;
 
     IPubVault public pubVault;
+    IOracle public oracle;
     AggregatorV3Interface internal dataFeed;
     
     mapping(bytes32 positionId => SpotPosition sptInfo) public spotPositions;
@@ -110,10 +113,12 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
         */
         dataFeed = AggregatorV3Interface(cp.DataFeedAddress);
         pubVault = IPubVault(cp.PubVaultAddress);
+        oracle = IOracle(cp.OracleAddress);
     }
  
     /// User Func
     function openPositionSpot(OType oType, uint8 slot, uint256 shares) external {
+        require(isOpenPosEnabled, "open position disabled");
         require(shares > 0, "invalid share num");
         require(block.timestamp - lastStrikeTime <= roundWindow, "open position window closed");
         bytes32 oId = _optionId(globalRound, slot, oType);
@@ -133,6 +138,7 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
     }
 
     function openPositionLevg(OType oType, uint8 slot, uint256 shares, uint256 leverage) external {
+        require(isOpenPosEnabled, "open position disabled");
         require(isLevgEnabled, "Levg Not enabled");
         bytes32 oId = _optionId(globalRound, slot, oType);
         bytes32 pId = _positionId(oId, msg.sender);
@@ -345,10 +351,21 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
         if (adminHold > 0) TransferHelper.safeTransfer(usdt, admin, adminHold);
     }
 
+    function strikeRecovery(uint256 ethPriceNow, uint8 decimal, uint256 actualLastStrikeTime, uint256 actualLastStrikeBlock) external onlyAdmin {
+        ethPrices[globalRound] = ethPriceNow;
+        lastStrikeTime = actualLastStrikeTime;
+        lastStrikeBlock = actualLastStrikeBlock;
+        uint256 adminHold = _strike(ethPriceNow);
+        globalRound++;
+        _setStrikes(ethPriceNow, decimal);
+        if (adminHold > 0) TransferHelper.safeTransfer(usdt, admin, adminHold);
+    }
+
     function _strike(uint256 ethPriceNow) internal returns(uint256 adminHold) {
         if (globalRound == 0) return 0;
         if (pubVault.totalLocked() > 0) {
-            pubVault.withdrawLocked();
+            uint256 amountWithdrawed = pubVault.withdrawLocked();
+            emit WithdrawVault(amountWithdrawed, globalRound - 1);
         }
         for(uint8 i = 0; i < vSlots; i++) {
             (, OType los) = _win_los(globalRound, i, ethPriceNow);
@@ -362,6 +379,10 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
         for(uint8 i = 0; i < vSlots; i++) {
             strikes[globalRound][i] = (stdStrike + strikeSpacing * i) * (10 ** decimal);
         }
+    }
+
+    function controlOpenPos(bool isOpenPosEnabled_) external onlyAdmin {
+        isOpenPosEnabled = isOpenPosEnabled_;
     }
 
     function updateForwarder(address newForwarder) external onlyAdmin {
@@ -413,12 +434,11 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
             /*uint timeStamp*/,
             /*uint80 answeredInRound*/
         ) = dataFeed.latestRoundData();
-        require(answer >= 0, "answer is negative");
+        if (answer == 0 || answer == 1) { // Oracle Circuit Breaker
+            uint256 price = oracle.getPrice();
+            return (price, 8); // hardcode decimal
+        }
         return (uint256(answer), dataFeed.decimals());
-
-        // /// Test
-        // if (globalRound == 0) return (384835536160, 8);
-        // return globalRound % 2 == 0 ? (ethPrices[globalRound - 1] + globalRound * 13, 8) : (ethPrices[globalRound - 1] - globalRound * 17, 8);
     }
 
     function _win_los(uint256 r, uint8 s, uint256 ethPriceNow) internal view returns(OType win, OType los) {
@@ -435,11 +455,11 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
 
     function _sharePrice(OType oType, uint8 slot) internal view returns(uint256 newSharePrice, bool isLqdt) {
         if (lastStrikeTime == 0) return (baseSharePrice, false);
-        (uint256 currentEthPrice, uint8 _eth_decimals_) = _getEthPrice();
+        (uint256 currentEthPrice, uint8 _usdt_chainlink_decimals_) = _getEthPrice();
         uint256 _strike_ = strikes[globalRound][slot];
         uint256 timeBase = expiration / timeFactor;
         uint256 timeExtr = (block.timestamp - lastStrikeTime) / timeFactor + timeBase;
-        uint256 _strikeDiff_factor_ = priceFactor * (10 ** _eth_decimals_);
+        uint256 _strikeDiff_factor_ = priceFactor * (10 ** _usdt_chainlink_decimals_);
         uint256 priceBase = _strike_ / priceFactor;
         uint256 priceExtr = currentEthPrice / priceFactor;
         uint256 strikeDiff = currentEthPrice > _strike_ ? currentEthPrice - _strike_ : _strike_ - currentEthPrice;
@@ -449,7 +469,7 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
             } else if (_strike_ > currentEthPrice && strikeDiff >= _strikeDiff_factor_){
                 newSharePrice = baseSharePrice * priceExtr * (timeExtr ** 2) * _strikeDiff_factor_ / (priceBase * (timeBase ** 2) * strikeDiff);
             } else {
-                // uint256 demonimator = 2 * (10 ** (_eth_decimals_ - usdtDecimals)); /// _eth_decimals_ = 10, usdtDecimals = 8, hard coded;
+                // uint256 demonimator = 2 * (10 ** (_usdt_chainlink_decimals_ - usdtDecimals)); /// _usdt_chainlink_decimals_ = 10, usdtDecimals = 8, hard coded;
                 newSharePrice = baseSharePrice * (timeExtr ** 2) / (timeBase ** 2) + currentEthPrice / 200  - _strike_ / 200;
             }
             isLqdt = _strike_ > currentEthPrice;

@@ -12,6 +12,7 @@ interface IRaven {
         address Forwarder;
         address Usdt;                   // 0x8f860AF0c07336Cd0E944ead52a59fFfcF2067CA | sepolia
         address DataFeedAddress;        // 0x694AA1769357215DE4FAC081bf1f309aDC325306 | sepolia ETH/USD
+        address OracleAddress;          // custom oracle address
         address PubVaultAddress;
         
         uint256 BaseSharePrice;         // 10 * (10 ** UsdtDecimals);
@@ -76,6 +77,8 @@ interface IRaven {
 
     /// admin func
     function strike() external;
+    function strikeRecovery(uint256 ethPriceNow, uint8 decimal, uint256 actualLastStrikeTime, uint256 actualLastStrikeBlock) external; 
+    function controlOpenPos(bool isOpenPosEnabled_) external;
     function updateForwarder(address newForwarder) external;
     function updateParams(ConstructParams memory cp) external;
     function enableLevg(bool enabled) external;
@@ -89,4 +92,5 @@ interface IRaven {
     function liquidationCall(OType oType, uint8 slot, address user, uint256 callShare) external;
 
     event LiquidationUpdated(address user, OType oType, uint8 slot, uint256 lvgValue, uint256 newShare, uint256 newMargin, uint256 openTime, uint256 updateBlock);
+    event WithdrawVault(uint256 amountWithdraw, uint256 roundWithdraw);
 }
