@@ -22,7 +22,7 @@ interface IPubVault {
     function post_init(address raven_) external;
     function holdLocked(uint256 borrow) external;
     function releaseLocked(uint256 release) external;
-    function withdrawLocked() external returns(uint256);
+    function withdrawLocked(uint256 round) external returns(uint256);
     function deposit(uint256 assets) external returns(uint256 shares);
     function withdraw(uint256 assets) external returns (uint256 shares);
     function redeem(uint256 shares) external returns (uint256 assets);

@@ -8,13 +8,13 @@ import {AggregatorV3Interface} from "foundry-chainlink-toolkit/src/interfaces/fe
 import {TransferHelper} from "./lib/TransferHelper.sol";
 import {IRaven} from "./interface/IRaven.sol";
 import {IPubVault} from "./interface/IPubVault.sol";
-import {IOracle} from "./oracle/Oracle.sol";
 
 contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven {
     address public admin;
     address public forwarder; // chainlink upkeep address
     address public usdt;
     
+    uint256 public oracleMinAnswer;
     uint256 public baseSharePrice;
     uint256 public roundWindow;
     uint256 public incenWindow;
@@ -45,7 +45,6 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
     bool public isLevgEnabled;
 
     IPubVault public pubVault;
-    IOracle public oracle;
     AggregatorV3Interface internal dataFeed;
     
     mapping(bytes32 positionId => SpotPosition sptInfo) public spotPositions;
@@ -81,6 +80,7 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
         forwarder = cp.Forwarder;
         usdt = cp.Usdt;
 
+        oracleMinAnswer = cp.OracleMinAnswer;
         baseSharePrice = cp.BaseSharePrice;
         roundWindow = cp.RoundWindow;
         incenWindow = cp.IncenWindow;
@@ -113,7 +113,6 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
         */
         dataFeed = AggregatorV3Interface(cp.DataFeedAddress);
         pubVault = IPubVault(cp.PubVaultAddress);
-        oracle = IOracle(cp.OracleAddress);
     }
  
     /// User Func
@@ -364,7 +363,7 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
     function _strike(uint256 ethPriceNow) internal returns(uint256 adminHold) {
         if (globalRound == 0) return 0;
         if (pubVault.totalLocked() > 0) {
-            uint256 amountWithdrawed = pubVault.withdrawLocked();
+            uint256 amountWithdrawed = pubVault.withdrawLocked(globalRound);
             emit WithdrawVault(amountWithdrawed, globalRound - 1);
         }
         for(uint8 i = 0; i < vSlots; i++) {
@@ -395,6 +394,7 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
         forwarder = cp.Forwarder;
         usdt = cp.Usdt;
         
+        oracleMinAnswer = cp.OracleMinAnswer;
         baseSharePrice = cp.BaseSharePrice;
         roundWindow = cp.RoundWindow;
         incenWindow = cp.IncenWindow;
@@ -434,10 +434,7 @@ contract Raven is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IRaven 
             /*uint timeStamp*/,
             /*uint80 answeredInRound*/
         ) = dataFeed.latestRoundData();
-        if (answer == 0 || answer == 1) { // Oracle Circuit Breaker
-            uint256 price = oracle.getPrice();
-            return (price, 8); // hardcode decimal
-        }
+        require(answer > 0 && uint256(answer) != oracleMinAnswer, "Oracle Circuit Breaker");
         return (uint256(answer), dataFeed.decimals());
     }
 

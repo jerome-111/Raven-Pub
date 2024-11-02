@@ -12,9 +12,9 @@ interface IRaven {
         address Forwarder;
         address Usdt;                   // 0x8f860AF0c07336Cd0E944ead52a59fFfcF2067CA | sepolia
         address DataFeedAddress;        // 0x694AA1769357215DE4FAC081bf1f309aDC325306 | sepolia ETH/USD
-        address OracleAddress;          // custom oracle address
         address PubVaultAddress;
         
+        uint256 OracleMinAnswer;        // Chainlink minAnswer | 1
         uint256 BaseSharePrice;         // 10 * (10 ** UsdtDecimals);
         uint256 RoundWindow;            // 18 hours | 64800
         uint256 IncenWindow;            // 3 hours | incentive VToken window hours 

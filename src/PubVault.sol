@@ -23,8 +23,10 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
     uint256 public totalLockedAsset;
     uint256 public totalDeposits;
     uint256 public totalWithdraws;
+    uint256 public totalLoss; /// incremental of all raven withdraws 
     mapping(address user => uint256 deposits) public userDeposits;
     mapping(address user => uint256 withdraws) public userWithdraws;
+    mapping(uint256 round => uint256 loss) public roundLoss;
 
     modifier onlyRaven() {
         require(msg.sender == raven, 'only Raven');
@@ -78,9 +80,11 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
         totalLockedAsset = totalLockedAsset >= release ? totalLockedAsset - release : 0;
     }
 
-    function withdrawLocked() external onlyRaven returns(uint256) {
+    function withdrawLocked(uint256 round) external onlyRaven returns(uint256) {
         uint256 amountWithdraw = totalLockedAsset;
         totalLockedAsset = 0;
+        roundLoss[round] = amountWithdraw;
+        totalLoss += amountWithdraw;
         TransferHelper.safeTransfer(usdt, raven, amountWithdraw);
         return amountWithdraw;
     }
@@ -173,6 +177,7 @@ contract PubVault is OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IPub
     function convertToAssets(uint256 shares) external view returns (uint256) {
         return _convertToAssets(shares, Math.Rounding.Floor);
     }
+
     /// internal func
     function _totalAssets() internal view returns (uint256) {
         return IERC20(usdt).balanceOf(address(this));
